@@ -1,6 +1,11 @@
+/*
+	Package httpproto implements an http server for HTTPv1.1.
+*/
 package core
 
 import (
+	"bufio"
+	"encoding/json"
 	"fmt"
 	"log"
 	"net"
@@ -13,9 +18,36 @@ type Server struct {
 	port    int
 }
 
+func mapPrettier(request map[string]string) string {
+	b, err := json.MarshalIndent(request, "", "  ")
+	if err != nil {
+		fmt.Println("error:", err)
+	}
+
+	return string(b)
+}
+
 func handleConnection(conn net.Conn) {
 
 	// HTTP request format: [method] [resource] [http-version]\r\n
+	//  \r\n states end of header.
+
+	/* GET response
+
+	HTTP/1.0 200 OK
+	Etiam bibendum sapien ut est posuere pretium. Vestibulum a justo at sapien pharetra sagittis in eget lacus.
+
+	HTTP/1.0 404 Not Found
+	Sorry we don't have that file!
+
+	HTTP/1.0 400 Bad Request
+	Im sorry I just don't understand.
+
+	*/
+
+	//TODO: Implement the Content-Length header
+	//TODO: Implement the Server header
+	//TODO: Implement the Content-Type header
 	defer conn.Close()
 
 	remoteAddr := conn.RemoteAddr()
@@ -23,37 +55,31 @@ func handleConnection(conn net.Conn) {
 
 	// Wait for request from conn
 	for {
-		buffer := make([]byte, 4096)
-		bufferSize, err := conn.Read(buffer)
 
-		if bufferSize > 0 {
-			log.Printf("Data received from connection %s: %s", conn.RemoteAddr(), string(buffer))
+		reader := bufio.NewReader(conn)
+		buff := make([]byte, reader.Size())
+		reader.Read(buff)
+		lines := string(buff)
+		request := make(map[string]string)
+		dat := strings.Split(lines, "\n")
 
-			data := strings.TrimSpace(string(buffer))
-			log.Print(data)
-			if strings.Contains(data, "GET") {
-				fmt.Println("buffer is GET")
-				conn.Write([]byte("ANSWER"))
-				log.Print("Sent answer")
+		for i, line := range dat {
+			if i == 0 {
+
+				header := strings.Split(line, " ")
+				request["method"] = header[0]
+				request["resource"] = header[1]
+				request["version"] = header[2]
 			}
 
-			if  strings.Contains(data ,"END") {
-				conn.Write([]byte("ENDED"))
-				conn.Close()
-				break
-			}
-
-			if err != nil {
-				log.Printf("Cannot write to connection buffer")
+			if strings.Contains(line, ":") {
+				line := strings.ReplaceAll(line, "\u0000", "")
+				pair := strings.Split(strings.TrimSpace(line), ":")
+				request[pair[0]] = pair[1]
 			}
 		}
 
-		if err != nil {
-			log.Printf("Something bad happened while reading data from %s\n", remoteAddr)
-			log.Printf("Connection with %s closed...\n", remoteAddr)
-			conn.Close()
-			break
-		}
+		log.Printf("Data received: %s", mapPrettier(request))
 	}
 }
 
