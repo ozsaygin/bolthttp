@@ -20,39 +20,46 @@ type Server struct {
 	Port    int
 }
 
-func mapPrettier(request map[string]string) string {
-	b, err := json.MarshalIndent(request, "", "  ")
+func mapPrettier(dictionary map[string]string) string {
+	pretty, err := json.MarshalIndent(dictionary, "", "  ")
 	if err != nil {
 		fmt.Println("error:", err)
 	}
-
-	return string(b)
+	return string(pretty)
 }
 
 func handleConnection(conn net.Conn) {
+
+	// TODO: Implement Content-Length header
+	// TODO: Implement Server header
+	// TODO: Implement Content-Type header
+
 	defer conn.Close()
-
-	// HTTP request format: [method] [resource] [http-version]\r\n
-	//  \r\n states end of header.
-
-	//TODO: Implement the Content-Length header
-	//TODO: Implement the Server header
-	//TODO: Implement the Content-Type header
 
 	remoteAddr := conn.RemoteAddr()
 	log.Printf("Connection established: %s", remoteAddr)
-	fmt.Println("here132")
-	// Wait for request from conn
-	for {
+
+	connected := true
+	// Waits for requests from connection
+	for connected {
+
 		reader := bufio.NewReader(conn)
 		buff := make([]byte, reader.Size())
-		reader.Read(buff)
+
+		_, err := reader.Read(buff)
+
+		if err != nil {
+			log.Printf("Cannot read the buffer: %s", err)
+		}
 
 		data := string(buff)
-		fmt.Println(data)
 		request := make(map[string]string)
 
 		lines := strings.Split(data, "\n")
+
+		if !(len(lines) >0) {
+			continue
+		}
 
 		for i, line := range lines {
 
@@ -61,7 +68,8 @@ func handleConnection(conn net.Conn) {
 				header := strings.Split(line, " ")
 				request["method"] = header[0]
 				request["resource"] = header[1]
-				request["version"] = header[2]
+				request["version"] =strings.ReplaceAll(header[2], "\r", "")
+
 			}
 
 			if strings.Contains(line, ":") {
@@ -71,7 +79,7 @@ func handleConnection(conn net.Conn) {
 			}
 		}
 
-		fmt.Printf("Data received: %s", mapPrettier(request))
+		fmt.Printf("Data received by server: \n%s", mapPrettier(request))
 
 		// Process the request
 		// Request dispatcher
@@ -80,53 +88,56 @@ func handleConnection(conn net.Conn) {
 			log.Println("Something bad happened while getting cwd")
 		}
 
-
-		resourceDir := "/www"
+		// resourceDir := "/www"
 		switch request["method"] {
+
 		case "GET":
 
-			file, err := ioutil.ReadFile(currentDir + resourceDir  + request["resource"])
+			// Read file requested
+			file, err := ioutil.ReadFile(currentDir + request["resource"])
+
+			// Resource not found
 			if err != nil {
 
+				conn.Write([]byte("HTTP/1.0 404 Not Found\r\n\nSorry we don't have that file!"))
+				log.Println("HTTP/1.0 404 Not Found")
+				conn.Close()
+				connected = false
 
-				conn.Write([]byte("HTTP/1.0 404 Not Found\r\nSorry we don't have that file!"))
-				break
-
-				log.Println("Cannot open the file")
-				log.Println("[HTTP/1.0 404 Not Found]")
 			} else {
+
 				dataSent := file
 
-				message := "HTTP/1.0 200 OK\""
-				message += "\r\n"
+				message := "HTTP/1.0 200 OK\r\n"
+				message += "\n"
 				message += string(dataSent)
-				log.Println(message)
 
-				//color.Set(color.FgHiGreen)
+				conn.Write([]byte(message))
+
 				// TODO: Colorized server logs
-				log.Println("[HTTP/1.0 200 OK]")
-				break
-			}
 
+				log.Println("HTTP/1.0 200 OK")
+
+				// Panic occurs
+				conn.Close()
+				connected = false
+			}
 
 		case "POST":
 			fmt.Println("POST method call")
+
 		default:
-			message := "HTTP/1.0 400 Bad Request"
-			message += "\r\n"
-			message += "Im sorry I just dont understand."
-			msg := []byte(message)
-			conn.Write(msg)
+			message := "HTTP/1.0 400 Bad Request\r\n"
 
-			log.Println("[HTTP/1.0 400 Bad Request]")
+			message += "\nIm sorry I just dont understand.\n"
+			conn.Write([]byte(message))
 
-			if err != nil {
-				log.Println("problematic close")
-			}
-			break
+			log.Println("HTTP/1.0 400 Bad Request")
+
+			conn.Close()
+			connected = false
 		}
 	}
-	log.Println("came out")
 }
 
 func (s *Server) Serve() {
@@ -146,7 +157,6 @@ func (s *Server) Serve() {
 		if err != nil {
 			log.Printf("Connection from %s could not connect to server...", addr)
 		}
-		log.Println("new connection")
 
 		// Handle the connection in a separate go routine
 		go handleConnection(conn)
