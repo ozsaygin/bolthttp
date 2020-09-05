@@ -6,7 +6,6 @@ import (
 	"log"
 	"net"
 	"strconv"
-	"strings"
 )
 import "testing"
 
@@ -25,26 +24,24 @@ func TestServer_Serve(t *testing.T) {
 		fields      fields
 	}{
 		{"local", 1, fields{"127.0.0.1", 8080}},
-		{"local", 4, fields{"127.0.0.1", 8081}},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 
 			s := &Server{
-				address: tt.fields.address,
-				port:    tt.fields.port,
+				Address: tt.fields.address,
+				Port:    tt.fields.port,
 			}
 			// Start server
 			go s.Serve()
-			addr := s.address + ":" + strconv.Itoa(s.port)
+			addr := s.Address + ":" + strconv.Itoa(s.Port)
 
 			conn, err := net.Dial("tcp", addr)
 			if err != nil {
 				log.Println("Cannot connect to server")
 			}
-			buff := make([]byte, 4096)
-			msg := `GET /hello.htm HTTP/1.1\n
+			msg := `GET /a.txt HTTP/1.1\n
 User-Agent: Mozilla/4.0 (compatible; MSIE5.01; Windows NT)\n
 Host: www.tutorialspoint.com\n
 Accept-Language: en-us\n
@@ -53,25 +50,18 @@ Connection: Keep-Alive\n`
 
 			conn.Write([]byte(msg))
 
-			bufio.NewReader(conn).Read(buff)
-
-			body := string(buff)
-
-			fmt.Println("Body:" + body)
-			if !strings.Contains(string(body), "ANSWER") {
-				t.Errorf("Unexpected answer from server")
+			buf,err := bufio.NewReader(conn).ReadString('\n')
+			if err != nil {
+				fmt.Println("handle me")
 			}
+			fmt.Println(buf)
 
-			conn.Write([]byte("END"))
-			log.Print("client sent end")
-			buff = make([]byte, 4096)
-			bufio.NewReader(conn).Read(
-				buff)
-			body = string(buff)
-			if !strings.Contains(string(body), "ENDED") {
-				t.Errorf("Ungracefull kill")
-			}
-
+			fmt.Println("Client Body:" + buf)
+			conn.Close()
+			fmt.Println("client closed")
 		})
 	}
 }
+
+// TODO: Write test for each method call [GET, POST, PUT, ...]
+// TODO: Write test for found, missing resources and corrupted header

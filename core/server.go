@@ -7,15 +7,17 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"log"
 	"net"
+	"os"
 	"strconv"
 	"strings"
 )
 
 type Server struct {
-	address string
-	port    int
+	Address string
+	Port    int
 }
 
 func mapPrettier(request map[string]string) string {
@@ -28,44 +30,34 @@ func mapPrettier(request map[string]string) string {
 }
 
 func handleConnection(conn net.Conn) {
+	defer conn.Close()
 
 	// HTTP request format: [method] [resource] [http-version]\r\n
 	//  \r\n states end of header.
 
-	/* GET response
-
-	HTTP/1.0 200 OK
-	Etiam bibendum sapien ut est posuere pretium. Vestibulum a justo at sapien pharetra sagittis in eget lacus.
-
-	HTTP/1.0 404 Not Found
-	Sorry we don't have that file!
-
-	HTTP/1.0 400 Bad Request
-	Im sorry I just don't understand.
-
-	*/
-
 	//TODO: Implement the Content-Length header
 	//TODO: Implement the Server header
 	//TODO: Implement the Content-Type header
-	defer conn.Close()
 
 	remoteAddr := conn.RemoteAddr()
 	log.Printf("Connection established: %s", remoteAddr)
-
+	fmt.Println("here132")
 	// Wait for request from conn
 	for {
-
 		reader := bufio.NewReader(conn)
 		buff := make([]byte, reader.Size())
 		reader.Read(buff)
-		lines := string(buff)
+
+		data := string(buff)
+		fmt.Println(data)
 		request := make(map[string]string)
-		dat := strings.Split(lines, "\n")
 
-		for i, line := range dat {
+		lines := strings.Split(data, "\n")
+
+		for i, line := range lines {
+
+			// request headers have "\r\n" chars at the end of line
 			if i == 0 {
-
 				header := strings.Split(line, " ")
 				request["method"] = header[0]
 				request["resource"] = header[1]
@@ -79,13 +71,67 @@ func handleConnection(conn net.Conn) {
 			}
 		}
 
-		log.Printf("Data received: %s", mapPrettier(request))
+		fmt.Printf("Data received: %s", mapPrettier(request))
+
+		// Process the request
+		// Request dispatcher
+		currentDir, err := os.Getwd()
+		if err != nil {
+			log.Println("Something bad happened while getting cwd")
+		}
+
+
+		resourceDir := "/www"
+		switch request["method"] {
+		case "GET":
+
+			file, err := ioutil.ReadFile(currentDir + resourceDir  + request["resource"])
+			if err != nil {
+
+
+				conn.Write([]byte("HTTP/1.0 404 Not Found\r\nSorry we don't have that file!"))
+				break
+
+				log.Println("Cannot open the file")
+				log.Println("[HTTP/1.0 404 Not Found]")
+			} else {
+				dataSent := file
+
+				message := "HTTP/1.0 200 OK\""
+				message += "\r\n"
+				message += string(dataSent)
+				log.Println(message)
+
+				//color.Set(color.FgHiGreen)
+				// TODO: Colorized server logs
+				log.Println("[HTTP/1.0 200 OK]")
+				break
+			}
+
+
+		case "POST":
+			fmt.Println("POST method call")
+		default:
+			message := "HTTP/1.0 400 Bad Request"
+			message += "\r\n"
+			message += "Im sorry I just dont understand."
+			msg := []byte(message)
+			conn.Write(msg)
+
+			log.Println("[HTTP/1.0 400 Bad Request]")
+
+			if err != nil {
+				log.Println("problematic close")
+			}
+			break
+		}
 	}
+	log.Println("came out")
 }
 
 func (s *Server) Serve() {
 
-	addr := s.address + ":" + strconv.Itoa(s.port)
+	addr := s.Address + ":" + strconv.Itoa(s.Port)
 	log.Printf("Started to listen %s...", addr)
 	line, err := net.Listen("tcp", addr)
 
@@ -100,6 +146,7 @@ func (s *Server) Serve() {
 		if err != nil {
 			log.Printf("Connection from %s could not connect to server...", addr)
 		}
+		log.Println("new connection")
 
 		// Handle the connection in a separate go routine
 		go handleConnection(conn)
