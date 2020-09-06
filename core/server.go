@@ -1,5 +1,7 @@
 /*
-	Package httpproto implements an http server for HTTPv1.1.
+	Package httpproto implements an http server for HTTPv1.0.
+
+	See https://www.w3.org/Protocols/HTTP/1.0/draft-ietf-http-spec.html
 */
 package core
 
@@ -7,6 +9,7 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"log"
 	"net"
@@ -18,6 +21,10 @@ import (
 type Server struct {
 	Address string
 	Port    int
+}
+
+func NewServer(address string, port int) *Server {
+	return &Server{Address: address, Port: port}
 }
 
 func mapPrettier(dictionary map[string]string) string {
@@ -36,8 +43,8 @@ func handleConnection(conn net.Conn) {
 
 	defer conn.Close()
 
-	remoteAddr := conn.RemoteAddr()
-	log.Printf("Connection established: %s", remoteAddr)
+	//remoteAddr := conn.RemoteAddr()
+	//log.Printf("Connection established: %s", remoteAddr)
 
 	connected := true
 	// Waits for requests from connection
@@ -47,6 +54,10 @@ func handleConnection(conn net.Conn) {
 		buff := make([]byte, reader.Size())
 
 		_, err := reader.Read(buff)
+
+		if err == io.EOF {
+			continue
+		}
 
 		if err != nil {
 			log.Printf("Cannot read the buffer: %s", err)
@@ -79,7 +90,7 @@ func handleConnection(conn net.Conn) {
 			}
 		}
 
-		fmt.Printf("Data received by server: \n%s", mapPrettier(request))
+		//fmt.Printf("Data received by server: \n%s", mapPrettier(request))
 
 		// Process the request
 		// Request dispatcher
@@ -88,13 +99,15 @@ func handleConnection(conn net.Conn) {
 			log.Println("Something bad happened while getting cwd")
 		}
 
-		// resourceDir := "/www"
+		resourceDir := "/www"
+
 		switch request["method"] {
 
 		case "GET":
 
 			// Read file requested
-			file, err := ioutil.ReadFile(currentDir + request["resource"])
+			resourcePath := strings.ReplaceAll(request["resource"], "../", "")
+			file, err := ioutil.ReadFile(currentDir + resourceDir + resourcePath)
 
 			// Resource not found
 			if err != nil {
@@ -143,7 +156,7 @@ func handleConnection(conn net.Conn) {
 func (s *Server) Serve() {
 
 	addr := s.Address + ":" + strconv.Itoa(s.Port)
-	log.Printf("Started to listen %s...", addr)
+	//log.Printf("Started to listen %s...", addr)
 	line, err := net.Listen("tcp", addr)
 
 	if err != nil {
